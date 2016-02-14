@@ -96,13 +96,19 @@ impl<T: Encodable> TaskEncodable for T {
 /// Pops a task from the backup on drop.
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
-    queue: &'a Queue
+    queue: &'a Queue,
+    failed: Cell<bool>,
 }
 
 impl<'a, T> TaskGuard<'a, T> {
     /// Stop the underlying queue
     pub fn stop(&self) {
         self.queue.stop();
+    }
+
+    /// Fail the current task and don't remove it from the backup queue
+    pub fn fail(&self) {
+        self.failed.set(true);
     }
 
     /// Get access to the underlying task
@@ -126,9 +132,11 @@ impl<'a, T> Deref for TaskGuard<'a, T> {
 
 impl<'a, T> Drop for TaskGuard<'a, T> {
     fn drop(&mut self) {
-        // Pop job from backup queue
-        let backup = &self.queue.backup_queue[..];
-        let _ : () = self.queue.client.lpop(backup).expect("LPOP from backup queue failed");
+        if !self.failed.get() {
+            // Pop job from backup queue
+            let backup = &self.queue.backup_queue[..];
+            let _ : () = self.queue.client.lpop(backup).expect("LPOP from backup queue failed");
+        }
     }
 }
 
@@ -237,7 +245,7 @@ impl Queue {
 
         let task = T::decode_task(&v).unwrap();
 
-        Some(Ok(TaskGuard{task: task, queue: self}))
+        Some(Ok(TaskGuard{task: task, queue: self, failed: Cell::new(false)}))
     }
 }
 
@@ -313,7 +321,7 @@ mod test {
     }
 
     #[test]
-    fn can_enqueu() {
+    fn can_enqueue() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
@@ -329,5 +337,25 @@ mod test {
 
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(53, j.id);
+    }
+
+    #[test]
+    fn does_not_drop_failed() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let con2 = client.get_connection().unwrap();
+        let worker = Queue::new("failure".into(), con2);
+
+        let _ : () = con.del(worker.queue()).unwrap();
+        let _ : () = con.del(worker.backup_queue()).unwrap();
+        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+
+        {
+            let task : TaskGuard<Job> = worker.next().unwrap().unwrap();
+            task.fail();
+        }
+
+        let len : u32 = con.llen(worker.backup_queue()).unwrap();
+        assert_eq!(1, len);
     }
 }
