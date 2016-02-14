@@ -2,7 +2,7 @@ extern crate rustc_serialize;
 extern crate redis;
 extern crate oppgave;
 
-use oppgave::Worker;
+use oppgave::Queue;
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 struct Job {
@@ -12,7 +12,7 @@ struct Job {
 fn main() {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
     let con = client.get_connection().unwrap();
-    let worker = Worker::new("default".into(), con);
+    let worker = Queue::new("default".into(), con);
 
     println!("Starting worker with queue `default`");
 

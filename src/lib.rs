@@ -41,7 +41,7 @@ impl<T: Encodable> TaskEncodable for T {
 
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
-    worker: &'a Worker
+    worker: &'a Queue
 }
 
 impl<'a, T> TaskGuard<'a, T> {
@@ -70,17 +70,17 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
     }
 }
 
-pub struct Worker {
+pub struct Queue {
     queue_name: String,
     backup_queue: String,
     stopped: Cell<bool>,
     pub client: redis::Connection,
 }
 
-impl Worker {
-    pub fn new(name: String, client: redis::Connection) -> Worker {
+impl Queue {
+    pub fn new(name: String, client: redis::Connection) -> Queue {
         let backup_queue = [thread::current().name().unwrap_or("default".into()), "1"].join(":");
-        Worker {
+        Queue {
             queue_name: name,
             backup_queue: backup_queue,
             client: client,
@@ -159,7 +159,7 @@ mod test {
 
         let _ : () = con.rpush("default", "{\"id\":42}").unwrap();
 
-        let worker = Worker::new("default".into(), con);
+        let worker = Queue::new("default".into(), con);
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(42, j.id);
     }
@@ -168,7 +168,7 @@ mod test {
     fn releases_job() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
-        let worker = Worker::new("default".into(), con);
+        let worker = Queue::new("default".into(), con);
         let bqueue = worker.backup_queue();
 
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
@@ -200,7 +200,7 @@ mod test {
         let len : u32 = con.llen("stopper").unwrap();
         assert_eq!(3, len);
 
-        let worker = Worker::new("stopper".into(), con);
+        let worker = Queue::new("stopper".into(), con);
         while let Some(task) = worker.next::<Job>() {
             let task = task.unwrap();
             task.stop();
@@ -218,7 +218,7 @@ mod test {
         let con = client.get_connection().unwrap();
         let _ : () = con.del("enqueue").unwrap();
 
-        let worker = Worker::new("enqueue".into(), con);
+        let worker = Queue::new("enqueue".into(), con);
 
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
