@@ -1,3 +1,36 @@
+//! oppgave - A simple Redis-based task queue
+//!
+//!
+//! ## Example: Producer
+//!
+//! ```rust,ignore
+//! #[derive(RustcDecodable, RustcEncodable)]
+//! struct Job { id: u64 }
+//!
+//! let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+//! let con = client.get_connection().unwrap();
+//! let producer = Queue::new("default".into(), con);
+//!
+//! producer.push(Job{ id: 42 });
+//! ```
+//!
+//! ## Example: Worker
+//!
+//! ```rust,ignore
+//! #[derive(RustcDecodable, RustcEncodable)]
+//! struct Job { id: u64 }
+//!
+//! let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+//! let con = client.get_connection().unwrap();
+//! let worker = Queue::new("default".into(), con);
+//!
+//! while let Some(task) = worker.next() {
+//!     println!("Working with Job {}", job.id);
+//! }
+//! ```
+
+#![deny(missing_docs)]
+
 extern crate rustc_serialize;
 extern crate redis;
 extern crate libc;
@@ -19,6 +52,10 @@ fn getpid() -> i32 {
 ///
 /// Implemented for all `Decodable` objects by default.
 pub trait TaskDecodable where Self: Sized {
+    /// Decode the given Redis value into a task
+    ///
+    /// This should decode the string value into a proper task.
+    /// The string value is encoded as JSON.
     fn decode_task(value: &Value) -> RedisResult<Self>;
 }
 
@@ -26,6 +63,9 @@ pub trait TaskDecodable where Self: Sized {
 ///
 /// Implemented for all `Encodable` objects by default.
 pub trait TaskEncodable {
+    /// Encode the value into a Blob to insert into Redis
+    ///
+    /// It should encode the value into a JSON string.
     fn encode_task(&self) -> Vec<u8>;
 }
 
@@ -56,16 +96,23 @@ impl<T: Encodable> TaskEncodable for T {
 /// Pops a task from the backup on drop.
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
-    worker: &'a Queue
+    queue: &'a Queue
 }
 
 impl<'a, T> TaskGuard<'a, T> {
+    /// Stop the underlying queue
     pub fn stop(&self) {
-        self.worker.stop();
+        self.queue.stop();
     }
 
+    /// Get access to the underlying task
     pub fn inner(&self) -> &T {
         &self.task
+    }
+
+    /// Get access to the wrapper queue
+    pub fn queue(&self) -> &Queue {
+        self.queue
     }
 }
 
@@ -80,8 +127,8 @@ impl<'a, T> Deref for TaskGuard<'a, T> {
 impl<'a, T> Drop for TaskGuard<'a, T> {
     fn drop(&mut self) {
         // Pop job from backup queue
-        let backup = &self.worker.backup_queue[..];
-        let _ : () = self.worker.client.lpop(backup).expect("LPOP from backup queue failed");
+        let backup = &self.queue.backup_queue[..];
+        let _ : () = self.queue.client.lpop(backup).expect("LPOP from backup queue failed");
     }
 }
 
@@ -108,7 +155,7 @@ pub struct Queue {
     queue_name: String,
     backup_queue: String,
     stopped: Cell<bool>,
-    pub client: redis::Connection,
+    client: redis::Connection,
 }
 
 impl Queue {
@@ -190,7 +237,7 @@ impl Queue {
 
         let task = T::decode_task(&v).unwrap();
 
-        Some(Ok(TaskGuard{task: task, worker: self}))
+        Some(Ok(TaskGuard{task: task, queue: self}))
     }
 }
 
