@@ -29,6 +29,9 @@
 //! }
 //! ```
 
+#![cfg_attr(feature = "clippy", allow(unstable_features))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
+#![cfg_attr(feature = "clippy", plugin(clippy))]
 #![deny(missing_docs)]
 
 extern crate rustc_serialize;
