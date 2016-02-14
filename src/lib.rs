@@ -5,43 +5,41 @@ use std::str;
 use std::convert::From;
 use std::iter::Iterator;
 use std::marker::PhantomData;
-use rustc_serialize::json;
-use redis::{FromRedisValue, Value, RedisResult, ErrorKind, Commands};
+use rustc_serialize::{json, Decodable};
+use redis::{Value, RedisResult, ErrorKind, Commands};
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Job {
     id: u64
 }
 
-macro_rules! enqueueable {
-    ($typ:ty) => {
-        impl FromRedisValue for $typ {
-            fn from_redis_value(value: &Value) -> RedisResult<Self> {
-                match value {
-                    &Value::Data(ref v) => {
-                        let s = try!(str::from_utf8(&v));
-                        Ok(try!(json::decode(&s).map_err(|_| (ErrorKind::TypeError, "JSON decode failed"))))
+pub trait TaskDecodable where Self: Sized {
+    fn decode_task(value: &Value) -> RedisResult<Self>;
+}
 
-                    },
-                    v @ _ => {
-                        println!("what do we have here: {:?}", v);
-                        try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
-                    }
-                }
+impl<T: Decodable> TaskDecodable for T {
+    fn decode_task(value: &Value) -> RedisResult<T> {
+        match value {
+            &Value::Data(ref v) => {
+                let s = try!(str::from_utf8(&v));
+                Ok(try!(json::decode(&s).map_err(|_| (ErrorKind::TypeError, "JSON decode failed"))))
+
+            },
+            v @ _ => {
+                println!("what do we have here: {:?}", v);
+                try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
             }
         }
     }
 }
 
-enqueueable!(Job);
-
 struct Worker<T> {
     queue_name: String,
-    client: redis::Connection,
+    pub client: redis::Connection,
     _job_type: PhantomData<T>,
 }
 
-impl<T: FromRedisValue> Worker<T> {
+impl<T: TaskDecodable> Worker<T> {
     pub fn new(name: String, client: redis::Connection) -> Worker<T> {
         Worker {
             queue_name: name,
@@ -52,11 +50,11 @@ impl<T: FromRedisValue> Worker<T> {
 
     fn _next(&self) -> RedisResult<T> {
         let v = Value::Data(vec![123, 34, 105, 100, 34, 58, 52, 50, 125]);
-        FromRedisValue::from_redis_value(&v)
+        T::decode_task(&v)
     }
 }
 
-impl<T: FromRedisValue> Iterator for Worker<T> {
+impl<T: TaskDecodable> Iterator for Worker<T> {
     type Item = RedisResult<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -76,7 +74,7 @@ impl<T: FromRedisValue> Iterator for Worker<T> {
             }
         };
 
-        Some(FromRedisValue::from_redis_value(&v))
+        Some(T::decode_task(&v))
     }
 }
 
