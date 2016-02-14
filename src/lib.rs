@@ -85,7 +85,7 @@ fn decodes_job() {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
     let con = client.get_connection().unwrap();
 
-    let job = "{\"id\":42}".chars().map(|c| c as u8).collect::<Vec<_>>();
+    let _ : () = con.rpush("default", "{\"id\":42}").unwrap();
 
     let mut worker = Worker::<Job>::new("default".into(), con);
     let j : Job = worker.next().unwrap().unwrap();
