@@ -71,14 +71,13 @@ pub trait TaskEncodable {
 
 impl<T: Decodable> TaskDecodable for T {
     fn decode_task(value: &Value) -> RedisResult<T> {
-        match value {
-            &Value::Data(ref v) => {
+        match *value {
+            Value::Data(ref v) => {
                 let s = try!(str::from_utf8(&v));
-                Ok(try!(json::decode(&s).map_err(|_| (ErrorKind::TypeError, "JSON decode failed"))))
+                json::decode(&s).map_err(|_| From::from((ErrorKind::TypeError, "JSON decode failed")))
 
             },
-            v @ _ => {
-                println!("what do we have here: {:?}", v);
+            _ => {
                 try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
             }
         }
@@ -243,9 +242,10 @@ impl Queue {
             }
         };
 
-        let task = T::decode_task(&v).unwrap();
-
-        Some(Ok(TaskGuard{task: task, queue: self, failed: Cell::new(false)}))
+        match T::decode_task(&v) {
+            Err(e) => Some(Err(e)),
+            Ok(task) => Some(Ok(TaskGuard{task: task, queue: self, failed: Cell::new(false)}))
+        }
     }
 }
 
