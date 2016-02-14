@@ -264,7 +264,7 @@ mod test {
 
     #[test]
     fn decodes_job() {
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1:6380/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("default".into(), con2);
@@ -277,7 +277,7 @@ mod test {
 
     #[test]
     fn releases_job() {
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1:6380/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("default".into(), con2);
@@ -300,7 +300,7 @@ mod test {
 
     #[test]
     fn can_be_stopped() {
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1:6380/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("stopper".into(), con2);
@@ -322,7 +322,7 @@ mod test {
 
     #[test]
     fn can_enqueue() {
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1:6380/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
 
@@ -341,7 +341,7 @@ mod test {
 
     #[test]
     fn does_not_drop_failed() {
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1:6380/").unwrap();
         let con = client.get_connection().unwrap();
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("failure".into(), con2);
