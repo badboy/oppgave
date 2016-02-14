@@ -2,6 +2,7 @@ extern crate rustc_serialize;
 extern crate redis;
 
 use std::str;
+use std::cell::Cell;
 use std::thread;
 use std::ops::{Deref, Drop};
 use std::convert::From;
@@ -40,6 +41,12 @@ struct TaskGuard<'a, T: 'a> {
     worker: &'a Worker<T>
 }
 
+impl<'a, T: TaskDecodable> TaskGuard<'a, T> {
+    fn stop(&self) {
+        self.worker.stop();
+    }
+}
+
 impl<'a, T> Deref for TaskGuard<'a, T> {
     type Target = T;
 
@@ -59,6 +66,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
 struct Worker<T> {
     queue_name: String,
     backup_queue: String,
+    stopped: Cell<bool>,
     pub client: redis::Connection,
     _job_type: PhantomData<T>,
 }
@@ -70,20 +78,32 @@ impl<T: TaskDecodable> Worker<T> {
             queue_name: name,
             backup_queue: backup_queue,
             client: client,
+            stopped: Cell::new(false),
             _job_type: PhantomData,
         }
     }
 
-    fn next(&self) -> Option<RedisResult<TaskGuard<T>>> {
-        let qname = &self.queue_name[..];
-        let backup = &self.backup_queue[..];
+    pub fn stop(&self) {
+        self.stopped.set(true);
+    }
 
-        let v = match self.client.brpoplpush(qname, backup, 0) {
-            Ok(v) => v,
-            Err(e) => {
-                return Some(Err(From::from((ErrorKind::TypeError, "next failed"))));
-            }
-        };
+    pub fn next(&mut self) -> Option<RedisResult<TaskGuard<T>>> {
+        if self.stopped.get() {
+            return None;
+        }
+
+        let v;
+        {
+            let qname = &self.queue_name[..];
+            let backup = &self.backup_queue[..];
+
+            v = match self.client.brpoplpush(qname, backup, 0) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Some(Err(From::from((ErrorKind::TypeError, "next failed"))));
+                }
+            };
+        }
 
         let v = match v {
             v @ Value::Data(_) => v,
@@ -132,4 +152,27 @@ fn releases_job() {
 
     let in_backup : Vec<String> = con.lrange("releases_job:1", 0, -1).unwrap();
     assert_eq!(0, in_backup.len());
+}
+
+#[test]
+fn can_be_stopped() {
+    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+    let con = client.get_connection().unwrap();
+    let _ : () = con.lpush("stopper", "{\"id\":1}").unwrap();
+    let _ : () = con.lpush("stopper", "{\"id\":2}").unwrap();
+    let _ : () = con.lpush("stopper", "{\"id\":3}").unwrap();
+
+    let len : u32 = con.llen("stopper").unwrap();
+    assert_eq!(3, len);
+
+    let mut worker = Worker::<Job>::new("stopper".into(), con);
+    while let Some(mut task) = worker.next() {
+        let task = task.unwrap();
+        task.stop();
+    }
+
+    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+    let con = client.get_connection().unwrap();
+    let len : u32 = con.llen("stopper").unwrap();
+    assert_eq!(2, len);
 }
