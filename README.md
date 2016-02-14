@@ -3,6 +3,11 @@
 [![Build Status](https://travis-ci.org/badboy/oppgave.svg?branch=master)](https://travis-ci.org/badboy/oppgave)
 [![crates.io](http://meritbadge.herokuapp.com/oppgave)](https://crates.io/crates/oppgave)
 
+Inspired by [Ost](https://github.com/soveran/ost) and [Kute](https://github.com/moonglum/kute).
+
+A small reliable queue on top of Redis. Allows to push tasks and fetch them again.
+Can handle whatever task object you hand it, as long as it can be encoded and decoded to and from JSON.
+
 ## The name: oppgave - task
 
 `oppgave` is Norwegian for task.
