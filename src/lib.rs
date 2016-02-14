@@ -6,14 +6,8 @@ use std::cell::Cell;
 use std::thread;
 use std::ops::{Deref, Drop};
 use std::convert::From;
-use std::marker::PhantomData;
 use rustc_serialize::{json, Decodable};
 use redis::{Value, RedisResult, ErrorKind, Commands};
-
-#[derive(RustcDecodable, RustcEncodable)]
-struct Job {
-    id: u64
-}
 
 pub trait TaskDecodable where Self: Sized {
     fn decode_task(value: &Value) -> RedisResult<Self>;
@@ -37,10 +31,10 @@ impl<T: Decodable> TaskDecodable for T {
 
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
-    worker: &'a Worker<T>
+    worker: &'a Worker
 }
 
-impl<'a, T: TaskDecodable> TaskGuard<'a, T> {
+impl<'a, T> TaskGuard<'a, T> {
     pub fn stop(&self) {
         self.worker.stop();
     }
@@ -66,23 +60,21 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
     }
 }
 
-pub struct Worker<T> {
+pub struct Worker {
     queue_name: String,
     backup_queue: String,
     stopped: Cell<bool>,
     pub client: redis::Connection,
-    _job_type: PhantomData<T>,
 }
 
-impl<T: TaskDecodable> Worker<T> {
-    pub fn new(name: String, client: redis::Connection) -> Worker<T> {
+impl Worker {
+    pub fn new(name: String, client: redis::Connection) -> Worker {
         let backup_queue = [thread::current().name().unwrap_or("default".into()), "1"].join(":");
         Worker {
             queue_name: name,
             backup_queue: backup_queue,
             client: client,
             stopped: Cell::new(false),
-            _job_type: PhantomData,
         }
     }
 
@@ -94,7 +86,15 @@ impl<T: TaskDecodable> Worker<T> {
         self.stopped.get()
     }
 
-    pub fn next(&self) -> Option<RedisResult<TaskGuard<T>>> {
+    pub fn queue(&self) -> &str {
+        &self.queue_name
+    }
+
+    pub fn backup_queue(&self) -> &str {
+        &self.backup_queue
+    }
+
+    pub fn next<T: TaskDecodable>(&self) -> Option<RedisResult<TaskGuard<T>>> {
         if self.stopped.get() {
             return None;
         }
@@ -126,61 +126,75 @@ impl<T: TaskDecodable> Worker<T> {
 }
 
 
-#[test]
-fn decodes_job() {
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let con = client.get_connection().unwrap();
+#[cfg(test)]
+mod test {
+    extern crate redis;
 
-    let _ : () = con.rpush("default", "{\"id\":42}").unwrap();
+    use redis::Commands;
+    use super::*;
 
-    let mut worker = Worker::<Job>::new("default".into(), con);
-    let j = worker.next().unwrap().unwrap();
-    assert_eq!(42, j.id);
-}
+    #[derive(RustcDecodable, RustcEncodable)]
+    struct Job {
+        id: u64
+    }
 
-#[test]
-fn releases_job() {
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let con = client.get_connection().unwrap();
-    let mut worker = Worker::<Job>::new("default".into(), con);
+    #[test]
+    fn decodes_job() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
 
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let con = client.get_connection().unwrap();
+        let _ : () = con.rpush("default", "{\"id\":42}").unwrap();
 
-    let _ : () = con.lpush("default", "{\"id\":42}").unwrap();
-
-    {
-        let j = worker.next().unwrap().unwrap();
+        let worker = Worker::new("default".into(), con);
+        let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(42, j.id);
-        let in_backup : Vec<String> = con.lrange("releases_job:1", 0, -1).unwrap();
-        assert_eq!(1, in_backup.len());
-        assert_eq!("{\"id\":42}", in_backup[0]);
     }
 
-    let in_backup : Vec<String> = con.lrange("releases_job:1", 0, -1).unwrap();
-    assert_eq!(0, in_backup.len());
-}
+    #[test]
+    fn releases_job() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let worker = Worker::new("default".into(), con);
+        let bqueue = worker.backup_queue();
 
-#[test]
-fn can_be_stopped() {
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let con = client.get_connection().unwrap();
-    let _ : () = con.del("stopper").unwrap();
-    let _ : () = con.lpush("stopper", "{\"id\":1}").unwrap();
-    let _ : () = con.lpush("stopper", "{\"id\":2}").unwrap();
-    let _ : () = con.lpush("stopper", "{\"id\":3}").unwrap();
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
 
-    let len : u32 = con.llen("stopper").unwrap();
-    assert_eq!(3, len);
+        let _ : () = con.lpush("default", "{\"id\":42}").unwrap();
 
-    let mut worker = Worker::<Job>::new("stopper".into(), con);
-    while let Some(mut task) = worker.next() {
-        let task = task.unwrap();
-        task.stop();
+        {
+            let j = worker.next::<Job>().unwrap().unwrap();
+            assert_eq!(42, j.id);
+            let in_backup : Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
+            assert_eq!(1, in_backup.len());
+            assert_eq!("{\"id\":42}", in_backup[0]);
+        }
+
+        let in_backup : Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
+        assert_eq!(0, in_backup.len());
     }
 
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let con = client.get_connection().unwrap();
-    let len : u32 = con.llen("stopper").unwrap();
-    assert_eq!(2, len);
+    #[test]
+    fn can_be_stopped() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let _ : () = con.del("stopper").unwrap();
+        let _ : () = con.lpush("stopper", "{\"id\":1}").unwrap();
+        let _ : () = con.lpush("stopper", "{\"id\":2}").unwrap();
+        let _ : () = con.lpush("stopper", "{\"id\":3}").unwrap();
+
+        let len : u32 = con.llen("stopper").unwrap();
+        assert_eq!(3, len);
+
+        let worker = Worker::new("stopper".into(), con);
+        while let Some(task) = worker.next::<Job>() {
+            let task = task.unwrap();
+            task.stop();
+        }
+
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let len : u32 = con.llen("stopper").unwrap();
+        assert_eq!(2, len);
+    }
 }
