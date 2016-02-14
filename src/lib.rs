@@ -6,11 +6,15 @@ use std::cell::Cell;
 use std::thread;
 use std::ops::{Deref, Drop};
 use std::convert::From;
-use rustc_serialize::{json, Decodable};
+use rustc_serialize::{json, Decodable, Encodable};
 use redis::{Value, RedisResult, ErrorKind, Commands};
 
 pub trait TaskDecodable where Self: Sized {
     fn decode_task(value: &Value) -> RedisResult<Self>;
+}
+
+pub trait TaskEncodable {
+    fn encode_task(&self) -> Vec<u8>;
 }
 
 impl<T: Decodable> TaskDecodable for T {
@@ -26,6 +30,12 @@ impl<T: Decodable> TaskDecodable for T {
                 try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
             }
         }
+    }
+}
+
+impl<T: Encodable> TaskEncodable for T {
+    fn encode_task(&self) -> Vec<u8> {
+        json::encode(self).unwrap().into_bytes()
     }
 }
 
@@ -92,6 +102,10 @@ impl Worker {
 
     pub fn backup_queue(&self) -> &str {
         &self.backup_queue
+    }
+
+    pub fn push<T: TaskEncodable>(&self, task: T) {
+        let _ : () = self.client.lpush(self.queue(), task.encode_task()).expect("LPUSH failed to enqueue task");
     }
 
     pub fn next<T: TaskDecodable>(&self) -> Option<RedisResult<TaskGuard<T>>> {
@@ -196,5 +210,28 @@ mod test {
         let con = client.get_connection().unwrap();
         let len : u32 = con.llen("stopper").unwrap();
         assert_eq!(2, len);
+    }
+
+    #[test]
+    fn can_enqueu() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let _ : () = con.del("enqueue").unwrap();
+
+        let worker = Worker::new("enqueue".into(), con);
+
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let len : u32 = con.llen("enqueue").unwrap();
+        assert_eq!(0, len);
+
+        worker.push(Job{id: 53});
+
+        let con = client.get_connection().unwrap();
+        let len : u32 = con.llen("enqueue").unwrap();
+        assert_eq!(1, len);
+
+        let j = worker.next::<Job>().unwrap().unwrap();
+        assert_eq!(53, j.id);
     }
 }
