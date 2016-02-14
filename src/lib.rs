@@ -15,10 +15,16 @@ fn getpid() -> i32 {
     unsafe { libc::getpid() as i32 }
 }
 
+/// Task objects that can be reconstructed from the JSON stored in Redis
+///
+/// Implemented for all `Decodable` objects by default.
 pub trait TaskDecodable where Self: Sized {
     fn decode_task(value: &Value) -> RedisResult<Self>;
 }
 
+/// Task objects that can be encoded to JSON to be stored in Redis
+///
+/// Implemented for all `Encodable` objects by default.
 pub trait TaskEncodable {
     fn encode_task(&self) -> Vec<u8>;
 }
@@ -45,6 +51,9 @@ impl<T: Encodable> TaskEncodable for T {
     }
 }
 
+/// A wrapper of the fetched task
+///
+/// Pops a task from the backup on drop.
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
     worker: &'a Queue
@@ -76,6 +85,25 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
     }
 }
 
+/// A Queue allows to push new tasks or wait for them
+///
+/// Allows for reliable job processing.
+///
+/// On fetch jobs are moved to a backup queue.
+/// They are popped from the backup queue, when the returned task guard is dropped.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// #[derive(RustcDecodable, RustcEncodable)]
+/// struct Job { id: u64 }
+///
+/// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+/// let con = client.get_connection().unwrap();
+/// let producer = Queue::new("default".into(), con);
+///
+/// producer.push(Job{ id: 42 });
+/// ```
 pub struct Queue {
     queue_name: String,
     backup_queue: String,
@@ -84,6 +112,7 @@ pub struct Queue {
 }
 
 impl Queue {
+    /// Create a new Queue for the given name
     pub fn new(name: String, client: redis::Connection) -> Queue {
         let qname = format!("oppgave:{}", name);
         let backup_queue = format!("{}:{}:{}",
@@ -99,30 +128,41 @@ impl Queue {
         }
     }
 
+    /// Stop processing the queue
+    ///
+    /// On the next `.next()` call `None` will be returned.
     pub fn stop(&self) {
         self.stopped.set(true);
     }
 
+    /// Check if queue processing is stopped
     pub fn is_stopped(&self) -> bool {
         self.stopped.get()
     }
 
+    /// Get the full queue name
     pub fn queue(&self) -> &str {
         &self.queue_name
     }
 
+    /// Get the full backup queue name
     pub fn backup_queue(&self) -> &str {
         &self.backup_queue
     }
 
+    /// Get the number of remaining tasks in the queue
     pub fn size(&self) -> u64 {
         self.client.llen(self.queue()).unwrap_or(0)
     }
 
+    /// Push a new task to the queue
     pub fn push<T: TaskEncodable>(&self, task: T) {
         let _ : () = self.client.lpush(self.queue(), task.encode_task()).expect("LPUSH failed to enqueue task");
     }
 
+    /// Grab the next task from the queue
+    ///
+    /// This method blocks and waits until a new task is available.
     pub fn next<T: TaskDecodable>(&self) -> Option<RedisResult<TaskGuard<T>>> {
         if self.stopped.get() {
             return None;
