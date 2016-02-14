@@ -255,7 +255,7 @@ mod test {
     extern crate redis;
 
     use redis::Commands;
-    use super::*;
+    use super::{Queue, TaskGuard};
 
     #[derive(RustcDecodable, RustcEncodable)]
     struct Job {
