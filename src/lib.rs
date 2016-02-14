@@ -6,7 +6,6 @@ use std::cell::Cell;
 use std::thread;
 use std::ops::{Deref, Drop};
 use std::convert::From;
-use std::iter::Iterator;
 use std::marker::PhantomData;
 use rustc_serialize::{json, Decodable};
 use redis::{Value, RedisResult, ErrorKind, Commands};
@@ -36,14 +35,18 @@ impl<T: Decodable> TaskDecodable for T {
     }
 }
 
-struct TaskGuard<'a, T: 'a> {
+pub struct TaskGuard<'a, T: 'a> {
     task: T,
     worker: &'a Worker<T>
 }
 
 impl<'a, T: TaskDecodable> TaskGuard<'a, T> {
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.worker.stop();
+    }
+
+    pub fn inner(&self) -> &T {
+        &self.task
     }
 }
 
@@ -63,7 +66,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
     }
 }
 
-struct Worker<T> {
+pub struct Worker<T> {
     queue_name: String,
     backup_queue: String,
     stopped: Cell<bool>,
@@ -87,7 +90,11 @@ impl<T: TaskDecodable> Worker<T> {
         self.stopped.set(true);
     }
 
-    pub fn next(&mut self) -> Option<RedisResult<TaskGuard<T>>> {
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.get()
+    }
+
+    pub fn next(&self) -> Option<RedisResult<TaskGuard<T>>> {
         if self.stopped.get() {
             return None;
         }
@@ -99,7 +106,7 @@ impl<T: TaskDecodable> Worker<T> {
 
             v = match self.client.brpoplpush(qname, backup, 0) {
                 Ok(v) => v,
-                Err(e) => {
+                Err(_) => {
                     return Some(Err(From::from((ErrorKind::TypeError, "next failed"))));
                 }
             };
@@ -158,6 +165,7 @@ fn releases_job() {
 fn can_be_stopped() {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
     let con = client.get_connection().unwrap();
+    let _ : () = con.del("stopper").unwrap();
     let _ : () = con.lpush("stopper", "{\"id\":1}").unwrap();
     let _ : () = con.lpush("stopper", "{\"id\":2}").unwrap();
     let _ : () = con.lpush("stopper", "{\"id\":3}").unwrap();
