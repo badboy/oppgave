@@ -3,6 +3,24 @@ name = "oppgave"
 version = "0.1.0"
 authors = ["Jan-Erik Rediger <janerik@fnordig.de>"]
 
+keywords = ["queue", "redis"]
+description = "A simple Redis-based task queue"
+
+readme = "README.md"
+license = "MIT"
+
+homepage = "https://github.com/badboy/oppgave"
+repository = "https://github.com/badboy/oppgave"
+documentation = "https://badboy.github.io/oppgave"
+
+include = [
+  "README.md",
+  "LICENSE",
+  "Cargo.toml",
+  "src/**/*",
+  "examples/**/*"
+]
+
 [dependencies]
 rustc-serialize = "0.3.18"
 redis = "0.5.2"
