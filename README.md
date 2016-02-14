@@ -15,7 +15,7 @@ So `oppgave` is a **oppgave kø**, a **task queue**.
 
 Sadly, characters like `ø` don't play to well with stable Rust. [Non-ASCII identifiers are feature-gated](https://github.com/rust-lang/rust/issues/28979).
 
-If you are okay with using nightly, you can get `oppgave-kø` instead and add `#![feature(non_ascii_idents)]` to your main crate file.
+It would be possible with nightly and the `non_ascii_idents` feature to use `oppgave-kø`, but *crates.io* doesn't accept crates with non-ascii characters in the name. :(
 
 ## [Documentation][]
 
