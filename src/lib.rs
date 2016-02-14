@@ -104,6 +104,10 @@ impl Queue {
         &self.backup_queue
     }
 
+    pub fn size(&self) -> u64 {
+        self.client.llen(self.queue()).unwrap_or(0)
+    }
+
     pub fn push<T: TaskEncodable>(&self, task: T) {
         let _ : () = self.client.lpush(self.queue(), task.encode_task()).expect("LPUSH failed to enqueue task");
     }
@@ -129,7 +133,7 @@ impl Queue {
         let v = match v {
             v @ Value::Data(_) => v,
             _ => {
-                return Some(Err(From::from((ErrorKind::TypeError, "Not a 2-item Bulk reply"))));
+                return Some(Err(From::from((ErrorKind::TypeError, "Not a proper reply"))));
             }
         };
 
@@ -156,10 +160,11 @@ mod test {
     fn decodes_job() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
+        let con2 = client.get_connection().unwrap();
+        let worker = Queue::new("default".into(), con2);
 
-        let _ : () = con.rpush("default", "{\"id\":42}").unwrap();
+        let _ : () = con.rpush(worker.queue(), "{\"id\":42}").unwrap();
 
-        let worker = Queue::new("default".into(), con);
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(42, j.id);
     }
@@ -168,12 +173,11 @@ mod test {
     fn releases_job() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
-        let worker = Queue::new("default".into(), con);
+        let con2 = client.get_connection().unwrap();
+        let worker = Queue::new("default".into(), con2);
         let bqueue = worker.backup_queue();
 
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-        let con = client.get_connection().unwrap();
-
+        let _ : () = con.del(bqueue).unwrap();
         let _ : () = con.lpush("default", "{\"id\":42}").unwrap();
 
         {
@@ -184,32 +188,30 @@ mod test {
             assert_eq!("{\"id\":42}", in_backup[0]);
         }
 
-        let in_backup : Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
-        assert_eq!(0, in_backup.len());
+        let in_backup : u32 = con.llen(bqueue).unwrap();
+        assert_eq!(0, in_backup);
     }
 
     #[test]
     fn can_be_stopped() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
-        let _ : () = con.del("stopper").unwrap();
-        let _ : () = con.lpush("stopper", "{\"id\":1}").unwrap();
-        let _ : () = con.lpush("stopper", "{\"id\":2}").unwrap();
-        let _ : () = con.lpush("stopper", "{\"id\":3}").unwrap();
+        let con2 = client.get_connection().unwrap();
+        let worker = Queue::new("stopper".into(), con2);
 
-        let len : u32 = con.llen("stopper").unwrap();
-        assert_eq!(3, len);
+        let _ : () = con.del(worker.queue()).unwrap();
+        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+        let _ : () = con.lpush(worker.queue(), "{\"id\":2}").unwrap();
+        let _ : () = con.lpush(worker.queue(), "{\"id\":3}").unwrap();
 
-        let worker = Queue::new("stopper".into(), con);
+        assert_eq!(3, worker.size());
+
         while let Some(task) = worker.next::<Job>() {
             let task = task.unwrap();
             task.stop();
         }
 
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-        let con = client.get_connection().unwrap();
-        let len : u32 = con.llen("stopper").unwrap();
-        assert_eq!(2, len);
+        assert_eq!(2, worker.size());
     }
 
     #[test]
@@ -220,16 +222,11 @@ mod test {
 
         let worker = Queue::new("enqueue".into(), con);
 
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-        let con = client.get_connection().unwrap();
-        let len : u32 = con.llen("enqueue").unwrap();
-        assert_eq!(0, len);
+        assert_eq!(0, worker.size());
 
         worker.push(Job{id: 53});
 
-        let con = client.get_connection().unwrap();
-        let len : u32 = con.llen("enqueue").unwrap();
-        assert_eq!(1, len);
+        assert_eq!(1, worker.size());
 
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(53, j.id);
