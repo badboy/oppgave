@@ -1,13 +1,19 @@
 extern crate rustc_serialize;
 extern crate redis;
+extern crate libc;
 
-use std::str;
+use std::{str, thread};
 use std::cell::Cell;
-use std::thread;
 use std::ops::{Deref, Drop};
 use std::convert::From;
 use rustc_serialize::{json, Decodable, Encodable};
 use redis::{Value, RedisResult, ErrorKind, Commands};
+
+/// Return the PID of the calling process.
+/// TODO: Does this work on Windows?
+fn getpid() -> i32 {
+    unsafe { libc::getpid() as i32 }
+}
 
 pub trait TaskDecodable where Self: Sized {
     fn decode_task(value: &Value) -> RedisResult<Self>;
@@ -79,9 +85,14 @@ pub struct Queue {
 
 impl Queue {
     pub fn new(name: String, client: redis::Connection) -> Queue {
-        let backup_queue = [thread::current().name().unwrap_or("default".into()), "1"].join(":");
+        let qname = format!("oppgave:{}", name);
+        let backup_queue = format!("{}:{}:{}",
+                                   qname,
+                                   getpid(),
+                                   thread::current().name().unwrap_or("default".into()));
+
         Queue {
-            queue_name: name,
+            queue_name: qname,
             backup_queue: backup_queue,
             client: client,
             stopped: Cell::new(false),
@@ -178,7 +189,7 @@ mod test {
         let bqueue = worker.backup_queue();
 
         let _ : () = con.del(bqueue).unwrap();
-        let _ : () = con.lpush("default", "{\"id\":42}").unwrap();
+        let _ : () = con.lpush(worker.queue(), "{\"id\":42}").unwrap();
 
         {
             let j = worker.next::<Job>().unwrap().unwrap();
@@ -218,9 +229,10 @@ mod test {
     fn can_enqueu() {
         let client = redis::Client::open("redis://127.0.0.1/").unwrap();
         let con = client.get_connection().unwrap();
-        let _ : () = con.del("enqueue").unwrap();
+        let con2 = client.get_connection().unwrap();
 
-        let worker = Queue::new("enqueue".into(), con);
+        let worker = Queue::new("enqueue".into(), con2);
+        let _ : () = con.del(worker.queue()).unwrap();
 
         assert_eq!(0, worker.size());
 
