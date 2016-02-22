@@ -213,8 +213,8 @@ impl Queue {
     }
 
     /// Push a new task to the queue
-    pub fn push<T: TaskEncodable>(&self, task: T) {
-        let _ : () = self.client.lpush(self.queue(), task.encode_task()).expect("LPUSH failed to enqueue task");
+    pub fn push<T: TaskEncodable>(&self, task: T) -> RedisResult<()> {
+        self.client.lpush(self.queue(), task.encode_task())
     }
 
     /// Grab the next task from the queue
@@ -334,7 +334,7 @@ mod test {
 
         assert_eq!(0, worker.size());
 
-        worker.push(Job{id: 53});
+        worker.push(Job{id: 53}).unwrap();
 
         assert_eq!(1, worker.size());
 

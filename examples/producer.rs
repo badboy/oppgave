@@ -21,7 +21,7 @@ fn main() {
     let d = Duration::from_millis(1000);
     for i in 0.. {
         println!("Pushing job {}", i);
-        q.push(Job{id: i});
+        q.push(Job{id: i}).unwrap();
         sleep(d);
     }
 }
