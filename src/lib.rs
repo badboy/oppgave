@@ -51,9 +51,9 @@ fn getpid() -> i32 {
     unsafe { libc::getpid() as i32 }
 }
 
-/// Task objects that can be reconstructed from the JSON stored in Redis
+/// Task objects that can be reconstructed from the data stored in Redis
 ///
-/// Implemented for all `Decodable` objects by default.
+/// Implemented for all `Decodable` objects by default by relying on JSON encoding.
 pub trait TaskDecodable where Self: Sized {
     /// Decode the given Redis value into a task
     ///
@@ -62,13 +62,13 @@ pub trait TaskDecodable where Self: Sized {
     fn decode_task(value: &Value) -> RedisResult<Self>;
 }
 
-/// Task objects that can be encoded to JSON to be stored in Redis
+/// Task objects that can be encoded to a string to be stored in Redis
 ///
-/// Implemented for all `Encodable` objects by default.
+/// Implemented for all `Encodable` objects by default by encoding as JSON.
 pub trait TaskEncodable {
     /// Encode the value into a Blob to insert into Redis
     ///
-    /// It should encode the value into a JSON string.
+    /// It should encode the value into a string.
     fn encode_task(&self) -> Vec<u8>;
 }
 
