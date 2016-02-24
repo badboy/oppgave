@@ -103,11 +103,6 @@ pub struct TaskGuard<'a, T: 'a> {
 }
 
 impl<'a, T> TaskGuard<'a, T> {
-    /// Stop the underlying queue
-    pub fn stop(&self) {
-        self.queue.stop();
-    }
-
     /// Fail the current task and don't remove it from the backup queue
     pub fn fail(&self) {
         self.failed.set(true);
@@ -316,8 +311,8 @@ mod test {
         assert_eq!(3, worker.size());
 
         while let Some(task) = worker.next::<Job>() {
-            let task = task.unwrap();
-            task.stop();
+            let _task = task.unwrap();
+            worker.stop();
         }
 
         assert_eq!(2, worker.size());
