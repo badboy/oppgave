@@ -182,7 +182,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
 ///
 /// A Queue provides a convenient `Iterator`-like interface over tasks:
 ///
-/// ```
+/// ```rust,ignore
 /// #[derive(RustcDecodable, RustcEncodable)]
 /// struct Job { id: u64 }
 ///
