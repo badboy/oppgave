@@ -1,5 +1,20 @@
 //! oppgave - A simple Redis-based task queue
 //!
+//! oppgave provides a small reliable queue on top of Redis.
+//! It allows to push tasks and fetch them again.
+//!
+//! Tasks can be arbitrary objects, as long as they can be encoded and decoded into a String.
+//! The easiest way is to rely on JSON encoding by marking the task as `RustcEncodable` and
+//! `RustcDecodable`.
+//!
+//! Oppgave prodives a [reliable queue](http://redis.io/commands/rpoplpush#pattern-reliable-queue)
+//! by moving acquired tasks to a backup queue.
+//! If a task finished it is removed from this backup queue.
+//! If a task fails it remains in the backup queue for human processing later on.
+//!
+//! See [`Queue`](struct.Queue.html) for a detailed documentation how to use this.
+//!
+//! The following examples are provided as executables as well:
 //!
 //! ## Example: Producer
 //!
@@ -93,9 +108,12 @@ impl<T: Encodable> TaskEncodable for T {
     }
 }
 
-/// A wrapper of the fetched task
+/// A wrapper of the fetched task.
 ///
-/// Pops a task from the backup on drop.
+/// If not marked otherwise, the contained task will be removed from the backup queue on `Drop`.
+/// Call `fail()` to mark the processing as failed. The task will remain in the backup queue.
+///
+/// It derefs to the underlying task automatically for all other method calls.
 pub struct TaskGuard<'a, T: 'a> {
     task: T,
     queue: &'a Queue,
@@ -103,17 +121,19 @@ pub struct TaskGuard<'a, T: 'a> {
 }
 
 impl<'a, T> TaskGuard<'a, T> {
-    /// Fail the current task and don't remove it from the backup queue
+    /// Fail the current task, in order to keep it in the backup queue.
     pub fn fail(&self) {
         self.failed.set(true);
     }
 
-    /// Get access to the underlying task
+    /// Get access to the underlying task.
+    ///
+    /// This should only be needed in very few cases, as this guard derefs automatically.
     pub fn inner(&self) -> &T {
         &self.task
     }
 
-    /// Get access to the wrapper queue
+    /// Get access to the wrapper queue.
     pub fn queue(&self) -> &Queue {
         self.queue
     }
@@ -137,12 +157,12 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
     }
 }
 
-/// A Queue allows to push new tasks or wait for them
+/// A Queue allows to push new tasks or fetch and decode them for processing.
 ///
-/// Allows for reliable job processing.
+/// ## Push
 ///
-/// On fetch jobs are moved to a backup queue.
-/// They are popped from the backup queue, when the returned task guard is dropped.
+/// Pushing new tasks to the queue encodes the given object and stores it in Redis for later
+/// processing.
 ///
 /// ## Example
 ///
@@ -156,6 +176,52 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
 ///
 /// producer.push(Job{ id: 42 });
 /// ```
+///
+///
+/// ## Fetch
+///
+/// A Queue provides a convenient `Iterator`-like interface over tasks:
+///
+/// ```
+/// #[derive(RustcDecodable, RustcEncodable)]
+/// struct Job { id: u64 }
+///
+/// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+/// let con = client.get_connection().unwrap();
+/// let queue = Queue::new("default".into(), con);
+///
+/// while let Some(task) = queue.next() {
+///     println!("Working with Job {}", job.id);
+/// }
+/// ```
+///
+/// Fetching a task from a queue returns a wrapper object, which delegates to the underlying,
+/// automatically decoded task object.
+/// If this wrapper object is dropped, the task is considered complete and therefore removed from
+/// the queue.
+/// If the task processing fails, you need to call `fail()` on this wrapper.
+///
+/// ### Example: Task complete & task failed
+///
+/// ```rust,ignore
+/// struct Job { id: u64 }
+///
+/// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+/// let con = client.get_connection().unwrap();
+/// let worker = Queue::new("default".into(), con);
+///
+/// {
+///   // `next` gives an Option<Result<...>>
+///   let task = worker.next().unwrap().unwrap();
+/// } // Task succeeded, removed from backup queue
+///
+/// {
+///   let task = worker.next().unwrap().unwrap();
+///   task.fail();
+/// } // Task failed, stays in backup queue
+/// ```
+///
+///
 pub struct Queue {
     queue_name: String,
     backup_queue: String,
