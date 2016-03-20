@@ -25,4 +25,4 @@ include = [
 rustc-serialize = "0.3.18"
 redis = "0.5.2"
 libc = "0.2.7"
-clippy = {version = "~0.0.41", optional = true}
+clippy = {version = "*", optional = true}
