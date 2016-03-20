@@ -1,7 +1,8 @@
 # oppgave - A simple Redis-based task queue
 
-[![Build Status](https://travis-ci.org/badboy/oppgave.svg?branch=master)](https://travis-ci.org/badboy/oppgave)
 [![crates.io](http://meritbadge.herokuapp.com/oppgave)](https://crates.io/crates/oppgave)
+[![Build Status](https://travis-ci.org/badboy/oppgave.svg?branch=master)](https://travis-ci.org/badboy/oppgave)
+[![Clippy Linting Result](https://clippy.bashy.io/github/badboy/oppgave/master/badge.svg)](https://clippy.bashy.io/github/badboy/oppgave/master/log)
 
 Inspired by [Ost](https://github.com/soveran/ost) and [Kute](https://github.com/moonglum/kute).
 
