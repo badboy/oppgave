@@ -152,7 +152,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
         if !self.failed.get() {
             // Pop job from backup queue
             let backup = &self.queue.backup_queue[..];
-            let _ : () = self.queue.client.lpop(backup).expect("LPOP from backup queue failed");
+            self.queue.client.lpop::<_, ()>(backup).expect("LPOP from backup queue failed");
         }
     }
 }
