@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Queue","A Queue allows to push new tasks or fetch and decode them for processing."],["TaskGuard","A wrapper of the fetched task."]],"trait":[["TaskDecodable","Task objects that can be reconstructed from the data stored in Redis"],["TaskEncodable","Task objects that can be encoded to a string to be stored in Redis"]]});

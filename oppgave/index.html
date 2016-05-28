@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `oppgave` crate.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, oppgave">
+
+    <title>oppgave - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'></p><script>window.sidebarCurrent = {name: 'oppgave', ty: 'mod', relpath: '../'};</script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content mod">
+<h1 class='fqn'><span class='in-band'>Crate <a class='mod' href=''>oppgave</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a id='src-0' class='srclink' href='../src/oppgave/src/lib.rs.html#1-425' title='goto source code'>[src]</a></span></h1>
+<div class='docblock'><p>oppgave - A simple Redis-based task queue</p>
+
+<p>oppgave provides a small reliable queue on top of Redis.
+It allows to push tasks and fetch them again.</p>
+
+<p>Tasks can be arbitrary objects, as long as they can be encoded and decoded into a String.
+The easiest way is to rely on JSON encoding by marking the task as <code>RustcEncodable</code> and
+<code>RustcDecodable</code>.</p>
+
+<p>Oppgave prodives a <a href="http://redis.io/commands/rpoplpush#pattern-reliable-queue">reliable queue</a>
+by moving acquired tasks to a backup queue.
+If a task finished it is removed from this backup queue.
+If a task fails it remains in the backup queue for human processing later on.</p>
+
+<p>See <a href="struct.Queue.html"><code>Queue</code></a> for a detailed documentation how to use this.</p>
+
+<p>The following examples are provided as executables as well:</p>
+
+<h2 id='example-producer' class='section-header'><a href='#example-producer'>Example: Producer</a></h2>
+<pre class='rust rust-example-rendered'>
+<span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>RustcDecodable</span>, <span class='ident'>RustcEncodable</span>)]</span>
+<span class='kw'>struct</span> <span class='ident'>Job</span> { <span class='ident'>id</span>: <span class='ident'>u64</span> }
+
+<span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>redis</span>::<span class='ident'>Client</span>::<span class='ident'>open</span>(<span class='string'>&quot;redis://127.0.0.1/&quot;</span>).<span class='ident'>unwrap</span>();
+<span class='kw'>let</span> <span class='ident'>con</span> <span class='op'>=</span> <span class='ident'>client</span>.<span class='ident'>get_connection</span>().<span class='ident'>unwrap</span>();
+<span class='kw'>let</span> <span class='ident'>producer</span> <span class='op'>=</span> <span class='ident'>Queue</span>::<span class='ident'>new</span>(<span class='string'>&quot;default&quot;</span>.<span class='ident'>into</span>(), <span class='ident'>con</span>);
+
+<span class='ident'>producer</span>.<span class='ident'>push</span>(<span class='ident'>Job</span>{ <span class='ident'>id</span>: <span class='number'>42</span> });</pre>
+
+<h2 id='example-worker' class='section-header'><a href='#example-worker'>Example: Worker</a></h2>
+<pre class='rust rust-example-rendered'>
+<span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>RustcDecodable</span>, <span class='ident'>RustcEncodable</span>)]</span>
+<span class='kw'>struct</span> <span class='ident'>Job</span> { <span class='ident'>id</span>: <span class='ident'>u64</span> }
+
+<span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>redis</span>::<span class='ident'>Client</span>::<span class='ident'>open</span>(<span class='string'>&quot;redis://127.0.0.1/&quot;</span>).<span class='ident'>unwrap</span>();
+<span class='kw'>let</span> <span class='ident'>con</span> <span class='op'>=</span> <span class='ident'>client</span>.<span class='ident'>get_connection</span>().<span class='ident'>unwrap</span>();
+<span class='kw'>let</span> <span class='ident'>worker</span> <span class='op'>=</span> <span class='ident'>Queue</span>::<span class='ident'>new</span>(<span class='string'>&quot;default&quot;</span>.<span class='ident'>into</span>(), <span class='ident'>con</span>);
+
+<span class='kw'>while</span> <span class='kw'>let</span> <span class='prelude-val'>Some</span>(<span class='ident'>task</span>) <span class='op'>=</span> <span class='ident'>worker</span>.<span class='ident'>next</span>() {
+    <span class='macro'>println</span><span class='macro'>!</span>(<span class='string'>&quot;Working with Job {}&quot;</span>, <span class='ident'>job</span>.<span class='ident'>id</span>);
+}</pre>
+</div><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class='struct' href='struct.Queue.html'
+                                  title='oppgave::Queue'>Queue</a></td>
+                           <td class='docblock short'>
+                                <p>A Queue allows to push new tasks or fetch and decode them for processing.</p>
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class='struct' href='struct.TaskGuard.html'
+                                  title='oppgave::TaskGuard'>TaskGuard</a></td>
+                           <td class='docblock short'>
+                                <p>A wrapper of the fetched task.</p>
+                           </td>
+                       </tr></table><h2 id='traits' class='section-header'><a href="#traits">Traits</a></h2>
+<table>
+                       <tr class=' module-item'>
+                           <td><a class='trait' href='trait.TaskDecodable.html'
+                                  title='oppgave::TaskDecodable'>TaskDecodable</a></td>
+                           <td class='docblock short'>
+                                <p>Task objects that can be reconstructed from the data stored in Redis</p>
+                           </td>
+                       </tr>
+                       <tr class=' module-item'>
+                           <td><a class='trait' href='trait.TaskEncodable.html'
+                                  title='oppgave::TaskEncodable'>TaskEncodable</a></td>
+                           <td class='docblock short'>
+                                <p>Task objects that can be encoded to a string to be stored in Redis</p>
+                           </td>
+                       </tr></table></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "oppgave";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    
+    <script defer src="../search-index.js"></script>
+</body>
+</html>
