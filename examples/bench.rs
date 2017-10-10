@@ -1,4 +1,5 @@
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
 extern crate redis;
 extern crate oppgave;
 extern crate libc;
@@ -9,7 +10,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use std::{thread, process};
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Job {
     id: usize,
 }

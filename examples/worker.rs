@@ -1,10 +1,11 @@
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
 extern crate redis;
 extern crate oppgave;
 
 use oppgave::Queue;
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Job {
     id: u64,
 }
