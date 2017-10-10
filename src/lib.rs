@@ -69,7 +69,10 @@ fn getpid() -> i32 {
 /// Task objects that can be reconstructed from the data stored in Redis
 ///
 /// Implemented for all `Decodable` objects by default by relying on JSON encoding.
-pub trait TaskDecodable where Self: Sized {
+pub trait TaskDecodable
+where
+    Self: Sized,
+{
     /// Decode the given Redis value into a task
     ///
     /// This should decode the string value into a proper task.
@@ -92,12 +95,12 @@ impl<T: Decodable> TaskDecodable for T {
         match *value {
             Value::Data(ref v) => {
                 let s = try!(str::from_utf8(&v));
-                json::decode(&s).map_err(|_| From::from((ErrorKind::TypeError, "JSON decode failed")))
+                json::decode(&s).map_err(|_| {
+                    From::from((ErrorKind::TypeError, "JSON decode failed"))
+                })
 
-            },
-            _ => {
-                try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
             }
+            _ => try!(Err((ErrorKind::TypeError, "Can only decode from a string"))),
         }
     }
 }
@@ -152,7 +155,9 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
         if !self.failed.get() {
             // Pop job from backup queue
             let backup = &self.queue.backup_queue[..];
-            self.queue.client.lpop::<_, ()>(backup).expect("LPOP from backup queue failed");
+            self.queue.client.lpop::<_, ()>(backup).expect(
+                "LPOP from backup queue failed",
+            );
         }
     }
 }
@@ -233,10 +238,12 @@ impl Queue {
     /// Create a new Queue for the given name
     pub fn new(name: String, client: redis::Connection) -> Queue {
         let qname = format!("oppgave:{}", name);
-        let backup_queue = format!("{}:{}:{}",
-                                   qname,
-                                   getpid(),
-                                   thread::current().name().unwrap_or("default".into()));
+        let backup_queue = format!(
+            "{}:{}:{}",
+            qname,
+            getpid(),
+            thread::current().name().unwrap_or("default".into())
+        );
 
         Queue {
             queue_name: qname,
@@ -302,13 +309,19 @@ impl Queue {
         let v = match v {
             v @ Value::Data(_) => v,
             _ => {
-                return Some(Err(From::from((ErrorKind::TypeError, "Not a proper reply"))));
+                return Some(Err(
+                    From::from((ErrorKind::TypeError, "Not a proper reply")),
+                ));
             }
         };
 
         match T::decode_task(&v) {
             Err(e) => Some(Err(e)),
-            Ok(task) => Some(Ok(TaskGuard{task: task, queue: self, failed: Cell::new(false)}))
+            Ok(task) => Some(Ok(TaskGuard {
+                task: task,
+                queue: self,
+                failed: Cell::new(false),
+            })),
         }
     }
 }
@@ -323,7 +336,7 @@ mod test {
 
     #[derive(RustcDecodable, RustcEncodable)]
     struct Job {
-        id: u64
+        id: u64,
     }
 
     #[test]
@@ -333,7 +346,7 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("default".into(), con2);
 
-        let _ : () = con.rpush(worker.queue(), "{\"id\":42}").unwrap();
+        let _: () = con.rpush(worker.queue(), "{\"id\":42}").unwrap();
 
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(42, j.id);
@@ -347,18 +360,18 @@ mod test {
         let worker = Queue::new("default".into(), con2);
         let bqueue = worker.backup_queue();
 
-        let _ : () = con.del(bqueue).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":42}").unwrap();
+        let _: () = con.del(bqueue).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":42}").unwrap();
 
         {
             let j = worker.next::<Job>().unwrap().unwrap();
             assert_eq!(42, j.id);
-            let in_backup : Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
+            let in_backup: Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
             assert_eq!(1, in_backup.len());
             assert_eq!("{\"id\":42}", in_backup[0]);
         }
 
-        let in_backup : u32 = con.llen(bqueue).unwrap();
+        let in_backup: u32 = con.llen(bqueue).unwrap();
         assert_eq!(0, in_backup);
     }
 
@@ -369,10 +382,10 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("stopper".into(), con2);
 
-        let _ : () = con.del(worker.queue()).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":2}").unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":3}").unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":2}").unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":3}").unwrap();
 
         assert_eq!(3, worker.size());
 
@@ -391,11 +404,11 @@ mod test {
         let con2 = client.get_connection().unwrap();
 
         let worker = Queue::new("enqueue".into(), con2);
-        let _ : () = con.del(worker.queue()).unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
 
         assert_eq!(0, worker.size());
 
-        worker.push(Job{id: 53}).unwrap();
+        worker.push(Job { id: 53 }).unwrap();
 
         assert_eq!(1, worker.size());
 
@@ -410,16 +423,16 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("failure".into(), con2);
 
-        let _ : () = con.del(worker.queue()).unwrap();
-        let _ : () = con.del(worker.backup_queue()).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
+        let _: () = con.del(worker.backup_queue()).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
 
         {
-            let task : TaskGuard<Job> = worker.next().unwrap().unwrap();
+            let task: TaskGuard<Job> = worker.next().unwrap().unwrap();
             task.fail();
         }
 
-        let len : u32 = con.llen(worker.backup_queue()).unwrap();
+        let len: u32 = con.llen(worker.backup_queue()).unwrap();
         assert_eq!(1, len);
     }
 }

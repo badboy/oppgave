@@ -6,7 +6,7 @@ use oppgave::Queue;
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 struct Job {
-    id: u64
+    id: u64,
 }
 
 fn main() {
@@ -17,7 +17,9 @@ fn main() {
     println!("Starting worker with queue `default`");
 
     while let Some(task) = worker.next::<Job>() {
-        if task.is_err() { continue; }
+        if task.is_err() {
+            continue;
+        }
 
         let task = task.unwrap();
 

@@ -8,7 +8,7 @@ use std::thread::sleep;
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 struct Job {
-    id: u64
+    id: u64,
 }
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
     let d = Duration::from_millis(1000);
     for i in 0.. {
         println!("Pushing job {}", i);
-        q.push(Job{id: i}).unwrap();
+        q.push(Job { id: i }).unwrap();
         sleep(d);
     }
 }
