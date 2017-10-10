@@ -1,12 +1,13 @@
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
 extern crate redis;
 extern crate oppgave;
 
 use oppgave::Queue;
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Job {
-    id: u64
+    id: u64,
 }
 
 fn main() {
@@ -17,7 +18,9 @@ fn main() {
     println!("Starting worker with queue `default`");
 
     while let Some(task) = worker.next::<Job>() {
-        if task.is_err() { continue; }
+        if task.is_err() {
+            continue;
+        }
 
         let task = task.unwrap();
 

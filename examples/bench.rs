@@ -1,4 +1,5 @@
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
 extern crate redis;
 extern crate oppgave;
 extern crate libc;
@@ -9,9 +10,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use std::{thread, process};
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Job {
-    id: usize
+    id: usize,
 }
 
 impl Job {
@@ -27,7 +28,7 @@ fn load(n: usize) {
 
     let now = Instant::now();
     for i in 0..n {
-        let j = Job{ id: i };
+        let j = Job { id: i };
         q.push(j).unwrap();
     }
 
@@ -41,7 +42,7 @@ fn process_rss(pid: i32) -> u64 {
         .arg("-p")
         .arg(format!("{}", pid))
         .output()
-        .unwrap_or_else(|e| { panic!("failed to execute process: {}", e)  });
+        .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
 
     let s = String::from_utf8_lossy(&output.stdout);
     let end = s.find('\n').unwrap();
@@ -61,7 +62,7 @@ fn main() {
         let now = Instant::now();
 
         loop {
-            let count : u64 = redis::cmd("LLEN").arg(queue_name).query(&con).unwrap();
+            let count: u64 = redis::cmd("LLEN").arg(queue_name).query(&con).unwrap();
             if count == 0 {
                 let elapsed = now.elapsed().as_secs();
                 let per_second = total as f64 / elapsed as f64;
@@ -80,7 +81,9 @@ fn main() {
     let worker = Queue::new("default".into(), con);
 
     while let Some(task) = worker.next::<Job>() {
-        if task.is_err() { continue; }
+        if task.is_err() {
+            continue;
+        }
         let task = task.unwrap();
         task.process();
     }

@@ -1,4 +1,5 @@
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
 extern crate redis;
 extern crate oppgave;
 
@@ -6,9 +7,9 @@ use oppgave::Queue;
 use std::time::Duration;
 use std::thread::sleep;
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Job {
-    id: u64
+    id: u64,
 }
 
 fn main() {
@@ -21,7 +22,7 @@ fn main() {
     let d = Duration::from_millis(1000);
     for i in 0.. {
         println!("Pushing job {}", i);
-        q.push(Job{id: i}).unwrap();
+        q.push(Job { id: i }).unwrap();
         sleep(d);
     }
 }

@@ -4,8 +4,8 @@
 //! It allows to push tasks and fetch them again.
 //!
 //! Tasks can be arbitrary objects, as long as they can be encoded and decoded into a String.
-//! The easiest way is to rely on JSON encoding by marking the task as `RustcEncodable` and
-//! `RustcDecodable`.
+//! The easiest way is to rely on JSON encoding by marking the task as `Serialize` and
+//! `Deserialize`.
 //!
 //! Oppgave prodives a [reliable queue](http://redis.io/commands/rpoplpush#pattern-reliable-queue)
 //! by moving acquired tasks to a backup queue.
@@ -19,7 +19,7 @@
 //! ## Example: Producer
 //!
 //! ```rust,ignore
-//! #[derive(RustcDecodable, RustcEncodable)]
+//! #[derive(Deserialize, Serialize)]
 //! struct Job { id: u64 }
 //!
 //! let client = redis::Client::open("redis://127.0.0.1/").unwrap();
@@ -32,7 +32,7 @@
 //! ## Example: Worker
 //!
 //! ```rust,ignore
-//! #[derive(RustcDecodable, RustcEncodable)]
+//! #[derive(Deserialize, Serialize)]
 //! struct Job { id: u64 }
 //!
 //! let client = redis::Client::open("redis://127.0.0.1/").unwrap();
@@ -49,7 +49,12 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![deny(missing_docs)]
 
-extern crate rustc_serialize;
+#[cfg(test)]
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
 extern crate redis;
 extern crate libc;
 
@@ -57,7 +62,8 @@ use std::{str, thread};
 use std::cell::Cell;
 use std::ops::{Deref, Drop};
 use std::convert::From;
-use rustc_serialize::{json, Decodable, Encodable};
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 use redis::{Value, RedisResult, ErrorKind, Commands};
 
 /// Return the PID of the calling process.
@@ -68,8 +74,11 @@ fn getpid() -> i32 {
 
 /// Task objects that can be reconstructed from the data stored in Redis
 ///
-/// Implemented for all `Decodable` objects by default by relying on JSON encoding.
-pub trait TaskDecodable where Self: Sized {
+/// Implemented for all `Deserialize` objects by default by relying on JSON encoding.
+pub trait TaskDecodable
+where
+    Self: Sized,
+{
     /// Decode the given Redis value into a task
     ///
     /// This should decode the string value into a proper task.
@@ -79,7 +88,7 @@ pub trait TaskDecodable where Self: Sized {
 
 /// Task objects that can be encoded to a string to be stored in Redis
 ///
-/// Implemented for all `Encodable` objects by default by encoding as JSON.
+/// Implemented for all `Serialize` objects by default by encoding as JSON.
 pub trait TaskEncodable {
     /// Encode the value into a Blob to insert into Redis
     ///
@@ -87,24 +96,22 @@ pub trait TaskEncodable {
     fn encode_task(&self) -> Vec<u8>;
 }
 
-impl<T: Decodable> TaskDecodable for T {
+impl<T: DeserializeOwned> TaskDecodable for T {
     fn decode_task(value: &Value) -> RedisResult<T> {
         match *value {
             Value::Data(ref v) => {
-                let s = try!(str::from_utf8(&v));
-                json::decode(&s).map_err(|_| From::from((ErrorKind::TypeError, "JSON decode failed")))
-
-            },
-            _ => {
-                try!(Err((ErrorKind::TypeError, "Can only decode from a string")))
+                serde_json::from_slice(v).map_err(|_| {
+                    From::from((ErrorKind::TypeError, "JSON decode failed"))
+                })
             }
+            _ => try!(Err((ErrorKind::TypeError, "Can only decode from a string"))),
         }
     }
 }
 
-impl<T: Encodable> TaskEncodable for T {
+impl<T: Serialize> TaskEncodable for T {
     fn encode_task(&self) -> Vec<u8> {
-        json::encode(self).unwrap().into_bytes()
+        serde_json::to_vec(self).unwrap()
     }
 }
 
@@ -152,7 +159,9 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
         if !self.failed.get() {
             // Pop job from backup queue
             let backup = &self.queue.backup_queue[..];
-            self.queue.client.lpop::<_, ()>(backup).expect("LPOP from backup queue failed");
+            self.queue.client.lpop::<_, ()>(backup).expect(
+                "LPOP from backup queue failed",
+            );
         }
     }
 }
@@ -167,7 +176,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
 /// ## Example
 ///
 /// ```rust,ignore
-/// #[derive(RustcDecodable, RustcEncodable)]
+/// #[derive(Deserialize, Serialize)]
 /// struct Job { id: u64 }
 ///
 /// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
@@ -183,7 +192,7 @@ impl<'a, T> Drop for TaskGuard<'a, T> {
 /// A Queue provides a convenient `Iterator`-like interface over tasks:
 ///
 /// ```rust,ignore
-/// #[derive(RustcDecodable, RustcEncodable)]
+/// #[derive(Deserialize, Serialize)]
 /// struct Job { id: u64 }
 ///
 /// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
@@ -233,10 +242,12 @@ impl Queue {
     /// Create a new Queue for the given name
     pub fn new(name: String, client: redis::Connection) -> Queue {
         let qname = format!("oppgave:{}", name);
-        let backup_queue = format!("{}:{}:{}",
-                                   qname,
-                                   getpid(),
-                                   thread::current().name().unwrap_or("default".into()));
+        let backup_queue = format!(
+            "{}:{}:{}",
+            qname,
+            getpid(),
+            thread::current().name().unwrap_or("default".into())
+        );
 
         Queue {
             queue_name: qname,
@@ -302,13 +313,19 @@ impl Queue {
         let v = match v {
             v @ Value::Data(_) => v,
             _ => {
-                return Some(Err(From::from((ErrorKind::TypeError, "Not a proper reply"))));
+                return Some(Err(
+                    From::from((ErrorKind::TypeError, "Not a proper reply")),
+                ));
             }
         };
 
         match T::decode_task(&v) {
             Err(e) => Some(Err(e)),
-            Ok(task) => Some(Ok(TaskGuard{task: task, queue: self, failed: Cell::new(false)}))
+            Ok(task) => Some(Ok(TaskGuard {
+                task: task,
+                queue: self,
+                failed: Cell::new(false),
+            })),
         }
     }
 }
@@ -321,9 +338,9 @@ mod test {
     use redis::Commands;
     use super::{Queue, TaskGuard};
 
-    #[derive(RustcDecodable, RustcEncodable)]
+    #[derive(Deserialize, Serialize)]
     struct Job {
-        id: u64
+        id: u64,
     }
 
     #[test]
@@ -333,7 +350,7 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("default".into(), con2);
 
-        let _ : () = con.rpush(worker.queue(), "{\"id\":42}").unwrap();
+        let _: () = con.rpush(worker.queue(), "{\"id\":42}").unwrap();
 
         let j = worker.next::<Job>().unwrap().unwrap();
         assert_eq!(42, j.id);
@@ -347,18 +364,18 @@ mod test {
         let worker = Queue::new("default".into(), con2);
         let bqueue = worker.backup_queue();
 
-        let _ : () = con.del(bqueue).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":42}").unwrap();
+        let _: () = con.del(bqueue).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":42}").unwrap();
 
         {
             let j = worker.next::<Job>().unwrap().unwrap();
             assert_eq!(42, j.id);
-            let in_backup : Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
+            let in_backup: Vec<String> = con.lrange(bqueue, 0, -1).unwrap();
             assert_eq!(1, in_backup.len());
             assert_eq!("{\"id\":42}", in_backup[0]);
         }
 
-        let in_backup : u32 = con.llen(bqueue).unwrap();
+        let in_backup: u32 = con.llen(bqueue).unwrap();
         assert_eq!(0, in_backup);
     }
 
@@ -369,10 +386,10 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("stopper".into(), con2);
 
-        let _ : () = con.del(worker.queue()).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":2}").unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":3}").unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":2}").unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":3}").unwrap();
 
         assert_eq!(3, worker.size());
 
@@ -391,11 +408,11 @@ mod test {
         let con2 = client.get_connection().unwrap();
 
         let worker = Queue::new("enqueue".into(), con2);
-        let _ : () = con.del(worker.queue()).unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
 
         assert_eq!(0, worker.size());
 
-        worker.push(Job{id: 53}).unwrap();
+        worker.push(Job { id: 53 }).unwrap();
 
         assert_eq!(1, worker.size());
 
@@ -410,16 +427,16 @@ mod test {
         let con2 = client.get_connection().unwrap();
         let worker = Queue::new("failure".into(), con2);
 
-        let _ : () = con.del(worker.queue()).unwrap();
-        let _ : () = con.del(worker.backup_queue()).unwrap();
-        let _ : () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
+        let _: () = con.del(worker.queue()).unwrap();
+        let _: () = con.del(worker.backup_queue()).unwrap();
+        let _: () = con.lpush(worker.queue(), "{\"id\":1}").unwrap();
 
         {
-            let task : TaskGuard<Job> = worker.next().unwrap().unwrap();
+            let task: TaskGuard<Job> = worker.next().unwrap().unwrap();
             task.fail();
         }
 
-        let len : u32 = con.llen(worker.backup_queue()).unwrap();
+        let len: u32 = con.llen(worker.backup_queue()).unwrap();
         assert_eq!(1, len);
     }
 }
