@@ -8,33 +8,16 @@ addons:
       - libdw-dev
       - redis-server
 
+env: RUST_BACKTRACE=1
+
 # run builds for both all the trains
 rust:
   - stable
   - beta
   - nightly
 
-before_script:
-  - |
-      pip install 'travis-cargo<0.2' --user &&
-      export PATH=$HOME/.local/bin:$PATH &&
-      make start
-
 script:
-  - |
-      travis-cargo build &&
-      travis-cargo test &&
-      make stop &&
-      travis-cargo --only stable doc
-after_success:
-  - travis-cargo --only stable doc-upload
-  - make start && travis-cargo coveralls --no-sudo && make stop
-
-env:
-  global:
-    - TRAVIS_CARGO_NIGHTLY_FEATURE="clippy"
-    - secure: "PXMWRhlM88JrQQbLR7g50eeRlZD0cwTzetx9QjDO0MGQJr4Se08U+MOfKAq3ST0Ir9UUfqJQIUsxORWXZHlj/gQljPPujY0wFU4AVA9UFV6858VrdV/idEjmXsuOCTEnapMBNumLW9NGpjvWAHjZnuw4d/rxFE9hy34pa+KBiaT4c9VbQqExLTMNt64htXCeq2C/PtB7DZ4yNq5tqDuS+LT+yfoJk1L9xeEuLOHSrGpjKL2RFPw09AOkN83kQxL/xEN8MMg1xXZm6qKJCHu6lOVFeRvF6d/AKNWDdvBEdahInKlqT5Q0hxOVpjwq1GW9PiVup4XXZIxYLvRQ1Wl+aaj7TlM77F+s15zaehfLolIh2k9rWMBsF2nreFhoHpbblwk0kgF/AvoYQnrDOV0bf2nHk3UpqW0LZxtV6Fi1EWtXYEYVFPrizpdwR600crAumNJEUaUmCwZRE1T0LdxU5WQLmnDlSECoLfGa5HaHjGbN5Cmknqb5ULVc9KMicxtLwenNrT+Nsyq8Rzq1ukvE32U4YOT3yET8JtyNVeYEmMCig/+hKbBV0ZPKTUi/ONQ7z0vv+NmeAehNaS2FN6qOYif9isCQBuNcUWSSSCG/PR14L0BTW/h25EVZuRJVEH6qI4R+bHBgYXu1kgRxcqgQ2xCc0nJBEVJWaY6FNItZ+s8="
+  - make all
 
 notifications:
-  email:
-    on_success: never
+  email: false

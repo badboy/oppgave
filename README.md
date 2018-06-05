@@ -2,7 +2,6 @@
 
 [![crates.io](http://meritbadge.herokuapp.com/oppgave)](https://crates.io/crates/oppgave)
 [![Build Status](https://travis-ci.org/badboy/oppgave.svg?branch=master)](https://travis-ci.org/badboy/oppgave)
-[![Clippy Linting Result](https://clippy.bashy.io/github/badboy/oppgave/master/badge.svg)](https://clippy.bashy.io/github/badboy/oppgave/master/log)
 
 Inspired by [Ost](https://github.com/soveran/ost) and [Kute](https://github.com/moonglum/kute).
 
@@ -22,7 +21,7 @@ It would be possible with nightly and the `non_ascii_idents` feature to use `opp
 
 [Documentation is available online.][documentation]
 
-[documentation]: http://badboy.github.io/oppgave
+[documentation]: https://docs.rs/oppgave/
 
 ## Installation
 
